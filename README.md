@@ -239,7 +239,7 @@ The application uses SQLite by default but can be configured for PostgreSQL:
 DATABASE_URL=postgresql://username:password@localhost/dbname
 ``` -->
 
-## 🧪 API Testing with Postman
+## API Testing with Postman
 
 ### Quick Setup
 
@@ -272,7 +272,7 @@ python start.py
 # 2. Select "CogniCare Local" environment
 # 3. Click "Run" on collection
 
-Expected result: ✅ **4/4 tests passed**
+Expected result: **4/4 tests passed**
 
 #### Run Individual Tests
 Click each test in sequence:
@@ -292,11 +292,11 @@ Click each test in sequence:
 
 ### What Gets Tested
 
-✅ **API Health** - Server connectivity  
-✅ **Authentication** - User registration and JWT tokens  
-✅ **ML/NLP Models** - Dementia detection analysis  
-✅ **Linguistic Features** - Text processing and analysis  
-✅ **Risk Assessment** - Clinical interpretation  
+ **API Health** - Server connectivity  
+ **Authentication** - User registration and JWT tokens  
+ **ML/NLP Models** - Dementia detection analysis  
+ **Linguistic Features** - Text processing and analysis  
+ **Risk Assessment** - Clinical interpretation  
 
 ### Troubleshooting
 
