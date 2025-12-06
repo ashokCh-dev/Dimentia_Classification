@@ -22,9 +22,18 @@ const numberMap: Record<string, number> = {
   eighteen: 18, nineteen: 19, twenty: 20
 };
 
-export const MemoryAssessment = () => {
-  const [phase, setPhase] = useState<AssessmentPhase>("intro");
-  const [currentStep, setCurrentStep] = useState(0);
+interface MemoryAssessmentProps {
+  onComplete?: (results: any) => void;
+  isSequential?: boolean;
+}
+
+export const MemoryAssessment: React.FC<MemoryAssessmentProps> = ({ onComplete, isSequential = false }) => {
+  const [phase, setPhase] = useState<AssessmentPhase>(
+   "intro"
+  );
+  const [currentStep, setCurrentStep] = useState(
+     0
+  );
   const [isListening, setIsListening] = useState(false);
   const [scores, setScores] = useState({
     immediateRecall: null as number | null,
@@ -32,6 +41,7 @@ export const MemoryAssessment = () => {
     distractionTask: null as number | null
   });
   const [wordsShown, setWordsShown] = useState(false);
+  const [interimWords, setInterimWords] = useState<string[]>([]);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [hasRecorded, setHasRecorded] = useState(false);
   const [toast, setToast] = useState<{title: string; description: string; variant?: string} | null>(null);
@@ -75,6 +85,41 @@ export const MemoryAssessment = () => {
     }
   }, [phase]);
 
+  // Handle completion for sequential assessments
+  useEffect(() => {
+    if (phase === "results" && onComplete && isSequential) {
+      const delayedRecallCount = results.delayedRecall?.filter(word => 
+        WORD_LIST.some(w => w.toLowerCase().includes(word.toLowerCase()) || word.toLowerCase().includes(w.toLowerCase()))
+      ).length || 0;
+
+      const assessmentResults = {
+        delayedRecall: {
+          correctWords: delayedRecallCount,
+          totalWords: results.delayedRecall?.length || 0,
+          wordList: results.delayedRecall || []
+        },
+        immediateRecall: {
+          correctWords: results.immediateRecall?.filter(word => 
+            WORD_LIST.some(w => w.toLowerCase().includes(word.toLowerCase()) || word.toLowerCase().includes(w.toLowerCase()))
+          ).length || 0,
+          totalWords: results.immediateRecall?.length || 0,
+          wordList: results.immediateRecall || []
+        },
+        distractionTask: {
+          numbers: results.distractionNumbers || [],
+          accuracy: scores.distractionTask || 0
+        },
+        scores,
+        completedAt: new Date()
+      };
+      
+      onComplete(assessmentResults);
+    }
+  }, [phase]);
+  useEffect(() => {
+    localStorage.setItem("memoryPhase", phase);
+    localStorage.setItem("memoryStep", String(currentStep));
+  }, [phase, currentStep]);
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 4000);
@@ -107,9 +152,10 @@ export const MemoryAssessment = () => {
     recognition.continuous = true; // Keep listening until manually stopped
     recognition.maxAlternatives = 1;
 
+    recognition.onstart = () => { console.log("Starting recording..."); setIsListening(true) };
     let finalTranscript = '';
 
-    recognition.onstart = () => setIsListening(true);
+    let finalResults = { immediateRecall: [], distractionNumbers: [], delayedRecall: [] };
 
     recognition.onresult = (event: any) => {
       let interimTranscript = '';
@@ -123,58 +169,59 @@ export const MemoryAssessment = () => {
         }
       }
 
-      // For distraction task, check if "one" is said to auto-stop
-      if (phase === "distraction") {
-        const combined = (finalTranscript + interimTranscript).toLowerCase();
-        if (combined.includes(' one') || combined.endsWith('one') || combined === 'one') {
-          recognition.stop();
-          return;
-        }
-      }
+    const fullText = (finalTranscript + interimTranscript).toLowerCase().trim();
+    if (fullText) {
+      if (phase === "immediate-recall") {
+        const updatedWords = fullText.split(/\s+/);
+        finalResults.immediateRecall = updatedWords;
 
-      // Update results in real-time with accumulated transcript
-      const fullText = (finalTranscript + interimTranscript).toLowerCase().trim();
-      if (fullText) {
-        setResults((prev) => {
-          const updated = { ...prev };
-          if (phase === "immediate-recall") {
-            updated.immediateRecall = fullText.split(/\s+/);
-          } else if (phase === "distraction") {
-            const nums = fullText
-              .split(/\s+/)
-              .map((w) => numberMap[w] ?? w)
-              .filter(Boolean);
-            updated.distractionNumbers = nums.map(String);
-          } else if (phase === "delayed-recall") {
-            updated.delayedRecall = fullText.split(/\s+/);
-          }
-          return updated;
-        });
-      }
-    };
+        setInterimWords(updatedWords);
+        setResults(prev => ({
+          ...prev,
+          immediateRecall: updatedWords
+        }));
 
-    recognition.onerror = () => {
-      showToast(
-        "STT Error",
-        "Could not process your speech.",
-        "destructive"
-      );
-      setIsListening(false);
-    };
+      } else if (phase === "distraction") {
+        const nums = fullText
+          .split(/\s+/)
+          .map((w) => numberMap[w] ?? w)
+          .filter(Boolean)
+          .map(String);
+
+        finalResults.distractionNumbers = nums;
+
+        setInterimWords(nums);
+        setResults(prev => ({
+          ...prev,
+          distractionNumbers: nums
+        }));
+
+      } else if (phase === "delayed-recall") {
+        const updatedWords = fullText.split(/\s+/);
+        finalResults.delayedRecall = updatedWords;
+
+        setInterimWords(updatedWords);
+        setResults(prev => ({
+          ...prev,
+          delayedRecall: updatedWords
+        }));
+      }
+    }
+
+  }
 
     recognition.onend = () => {
       setIsListening(false);
       setHasRecorded(true);
-      
-      // Process final results when recognition ends
-      const currentResults = phase === "immediate-recall" ? results.immediateRecall.join(' ') :
-                            phase === "distraction" ? results.distractionNumbers.join(' ') :
-                            results.delayedRecall.join(' ');
-      
+
+      const currentResults = phase === "immediate-recall" ? finalResults.immediateRecall.join(' ') :
+                            phase === "distraction" ? finalResults.distractionNumbers.join(' ') :
+                            finalResults.delayedRecall.join(' ');
       if (currentResults.trim()) {
         evaluateRecall(currentResults);
       }
     };
+
 
     recognition.start();
     recognitionRef.current = recognition;
@@ -182,7 +229,7 @@ export const MemoryAssessment = () => {
 
   const evaluateRecall = (spokenText: string, phaseType?: string) => {
     const currentPhase = phaseType || phase;
-    
+    console.log(currentPhase);
     if (currentPhase === "immediate-recall" || currentPhase === "delayed-recall") {
       const spokenWords = spokenText
         .split(/\s+/)
@@ -194,7 +241,7 @@ export const MemoryAssessment = () => {
       });
 
       const scorePercent = Math.round((correct / WORD_LIST.length) * 100);
-      
+      console.log("Score percent 197",scorePercent)
       setScores(prev => ({
         ...prev,
         [currentPhase === "immediate-recall" ? "immediateRecall" : "delayedRecall"]: scorePercent
@@ -245,12 +292,12 @@ export const MemoryAssessment = () => {
       
       // Score based only on presence of correct numbers, capped at 100%
       const totalScore = Math.min(100, Math.round((numbersPresent / 20) * 100));
-      
+      console.log("Total Score 248",totalScore);
       setScores(prev => ({
         ...prev,
         distractionTask: totalScore
       }));
-
+      console.log(scores);
       showToast(
         "Counting Results",
         `Found ${numbersPresent}/20 numbers (${totalScore}%).`
@@ -518,7 +565,16 @@ export const MemoryAssessment = () => {
                       {hasRecordedData() ? "Continue" : "Skip"}
                     </button>
                   )}
-
+                  {isListening && interimWords.length > 0 && (
+                    <div className="p-3 bg-blue-50 rounded-md max-h-32 overflow-y-auto mt-2 border border-blue-200">
+                      <h4 className="font-medium text-sm text-blue-700 mb-2">Heard so far:</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {interimWords.map((word, idx) => (
+                          <span key={idx} className="bg-blue-200 text-blue-800 px-2 py-1 rounded text-xs">{word.toUpperCase()}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 {/* Results Phase */}
                 {phase === "results" && (
                   <div className="space-y-4">
@@ -598,13 +654,15 @@ export const MemoryAssessment = () => {
                       )}
                     </div>
 
-                    <button
-                      onClick={restartAssessment}
-                      className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-4 rounded-lg transition-colors mt-3 flex items-center justify-center gap-2 border border-gray-300"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Restart Assessment
-                    </button>
+                    {!isSequential && (
+                      <button
+                        onClick={restartAssessment}
+                        className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-4 rounded-lg transition-colors mt-3 flex items-center justify-center gap-2 border border-gray-300"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Restart Assessment
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
